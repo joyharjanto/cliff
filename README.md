@@ -42,7 +42,7 @@ Create accounts and API keys from:
 
 ## 3. Add Environment Variables
 
-Create a `.env` file inside the **backend folder**.
+Edit the `.env` file inside the **backend folder**.
 
 ```
 RECALL_API_KEY=your_recall_api_key
