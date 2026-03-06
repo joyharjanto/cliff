@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Cliff</title>
+    <style>
+      body { font-family: system-ui, -apple-system, sans-serif; margin: 16px; }
+      .card { border: 1px solid #ddd; border-radius: 12px; padding: 14px; margin: 12px 0; }
+      .title { font-size: 16px; font-weight: 700; margin: 0 0 10px; }
+      .line { margin: 6px 0; }
+      .speaker { font-weight: 700; margin-right: 8px; }
+      a { word-break: break-all; }
+      pre { white-space: pre-wrap; word-wrap: break-word; margin: 0; }
+    </style>
+  </head>
+  <body>
+    <div class="card" id="participantsCard" style="display:none;">
+      <div class="title">Meeting</div>
+      <div id="participantsText"></div>
+    </div>
+
+    <div class="card" id="videoCard" style="display:none;">
+      <div class="title">Video</div>
+      <div id="videoLink"></div>
+    </div>
+
+    <div class="card" id="summaryCard" style="display:none;">
+      <div class="title">Summary</div>
+      <pre id="summary"></pre>
+    </div>
+
+    <div class="card" id="transcriptCard" style="display:none;">
+      <div class="title">Transcript</div>
+      <div id="transcript"></div>
+    </div>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>
