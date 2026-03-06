@@ -13,8 +13,7 @@ if (require('electron-squirrel-startup')) {
 
 const BACKEND_API_BASE = "http://localhost:3000";
 
-
-const sdkUploadIdByWindowId = new Map();
+const recordingIdByWindowId = new Map();
 
 let mainWindow;
 
@@ -58,10 +57,10 @@ const createSdkRecording = async () => {
   return res.json();
 };
 
-async function waitForTranscriptUrl(sdkUploadId, { intervalMs = 3000, timeoutMs = 5 * 60 * 1000 } = {}) {
+async function waitForTranscriptUrl(recordingId, { intervalMs = 3000, timeoutMs = 5 * 60 * 1000 } = {}) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    const res = await fetch(`${BACKEND_API_BASE}/api/transcript_for_sdk_upload/${sdkUploadId}`);
+    const res = await fetch(`${BACKEND_API_BASE}/api/transcript_for_recording/${recordingId}`);
     if (res.status === 409) { await sleep(intervalMs); continue; }
 
     const text = await res.text();
@@ -84,29 +83,30 @@ RecallAiSdk.addEventListener("meeting-detected", async (evt) => {
   console.log("meeting-detected", evt);
 
   const payload = await createSdkRecording();
+  console.log("payload", payload);
 
   const upload_token = payload.upload_token;
-  const sdkUploadId = payload.id; // <-- sdk_upload_id
+  const recordingId = payload.recording_id;
 
   if (!upload_token) throw new Error("Missing upload_token from backend");
-  if (!sdkUploadId) throw new Error("Missing payload.id (sdk_upload_id) from backend");
+  if (!recordingId) throw new Error("Missing payload.recording_id (recording_id) from backend");
 
   const windowId = evt.window.id;
-  sdkUploadIdByWindowId.set(windowId, sdkUploadId);
+  recordingIdByWindowId.set(windowId, recordingId);
 
   await startRecording(windowId, upload_token);
 
   console.log(`Started recording for window ${windowId}`);
-  console.log(`sdkUploadId: ${sdkUploadId}`);
   console.log(`Upload token: ${upload_token}`);
+  console.log(`Recording ID: ${recordingId}`);
 });
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-async function waitForVideoUrl(sdkUploadId, { intervalMs = 3000, timeoutMs = 5 * 60 * 1000 } = {}) {
+async function waitForVideoUrl(recordingId, { intervalMs = 3000, timeoutMs = 5 * 60 * 1000 } = {}) {
   const start = Date.now();
 
   while (Date.now() - start < timeoutMs) {
-    const res = await fetch(`${BACKEND_API_BASE}/api/recording/${sdkUploadId}`);
+    const res = await fetch(`${BACKEND_API_BASE}/api/recording/${recordingId}`);
 
     if (res.status === 409) {        // webhook not arrived yet
       await sleep(intervalMs);
@@ -182,37 +182,34 @@ RecallAiSdk.addEventListener("recording-ended", async (evt) => {
   try {
     console.log("Meeting has ended");
 
-    const windowId = evt?.window?.id;
-    const sdkUploadId = sdkUploadIdByWindowId.get(windowId);
-    if (!sdkUploadId) throw new Error(`No sdk_upload_id for windowId=${windowId}`);
+    const windowId = evt.window.id;
+    const recordingId = recordingIdByWindowId.get(windowId);
+    if (!recordingId) throw new Error(`No recordingId for windowId=${windowId}`);
 
-    // 1) video url (backend gated by webhook)
-    const videoUrl = await waitForVideoUrl(sdkUploadId);
+    const videoUrl = await waitForVideoUrl(recordingId);
     console.log("✅ Video URL ready:", videoUrl);
 
-    // 2) transcript download url (backend gated by transcript.done)
-    const transcriptUrl = await waitForTranscriptUrl(sdkUploadId);
+    const transcriptUrl = await waitForTranscriptUrl(recordingId);
     console.log("✅ Transcript URL ready:", transcriptUrl);
 
-    // 3) download transcript parts + convert to utterances
     const parts = await fetch(transcriptUrl).then(r => r.json());
     const utterances = cleanTranscriptParts(parts);
 
-    // 4) summarize via backend
     const sumRes = await fetch(`${BACKEND_API_BASE}/api/summarize`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ utterances }),
     });
+
     const sumText = await sumRes.text();
     if (!sumRes.ok) throw new Error(`summarize ${sumRes.status}: ${sumText}`);
     const { summary } = JSON.parse(sumText);
 
-    // 5) send to renderer (exact event names from your earlier code)
-    mainWindow?.webContents.send("videoUrl:ready", { sdkUploadId, videoUrl });
-    mainWindow?.webContents.send("transcript:ready", { sdkUploadId, utterances });
-    mainWindow?.webContents.send("summary:ready", { sdkUploadId, summary });
+    mainWindow?.webContents.send("videoUrl:ready", { recordingId, videoUrl });
+    mainWindow?.webContents.send("transcript:ready", { recordingId, utterances });
+    mainWindow?.webContents.send("summary:ready", { recordingId, summary });
 
+    recordingIdByWindowId.delete(windowId);
   } catch (e) {
     console.error("recording-ended failed:", e);
   }

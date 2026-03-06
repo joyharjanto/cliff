@@ -9,9 +9,11 @@ const OpenAI = require("openai");
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 app.use(express.json()); // lets you read JSON bodies
 
-const uploadToRecording = new Map(); // sdk_upload_id -> recording_id
-const recordingToTranscript = new Map(); // recording_id -> transcript_id
-const transcriptCache = new Map(); 
+const completedRecordings = new Set(); // sdk_upload.complete seen
+const transcriptStateByRecordingId = new Map();
+// recordingId -> { status: "starting" | "processing" | "complete" | "failed", transcriptId?: string, error?: string }
+
+const transcriptCache = new Map(); // transcriptId -> retrieved transcript object
 
 app.post("/api/summarize", async (req, res) => {
     try {
@@ -62,65 +64,132 @@ return JSON.parse(text);
 // IMPORTANT: For signature verification you often need the raw body,
 // but start simple first, then harden with verification.
 app.post("/webhooks/recall", express.json(), async (req, res) => {
-    const evt = req.body;
-    const eventName = evt?.event;
-  
-    const sdkUploadId = evt?.data?.sdk_upload?.id;
-    const recordingId = evt?.data?.recording?.id;
-  
-    const isUploadDone =
-      eventName === "sdk_upload.complete" || eventName === "sdk_upload.completed";
-  
-    if (isUploadDone && sdkUploadId && recordingId) {
-      uploadToRecording.set(String(sdkUploadId), String(recordingId));
-  
-      // start transcript creation once
-      if (!recordingToTranscript.has(String(recordingId))) {
-        try {
-          const job = await createTranscript(recordingId);
-          const transcriptId = job?.id ?? job?.transcript?.id;
-          if (transcriptId) recordingToTranscript.set(String(recordingId), String(transcriptId));
-        } catch (e) {
-          console.error("createTranscript failed:", e);
-        }
-      }
-    }
-  
-    // 2) When transcript is done, fetch and cache the download link
-    if (eventName === "transcript.done") {
-      const transcriptId = evt?.data?.transcript?.id;
-      if (transcriptId) {
-        const tRes = await fetch(`${RECALL_API_BASE}/api/v1/transcript/${transcriptId}/`, {
-          headers: { accept: "application/json", Authorization: `Token ${RECALL_API_KEY}` },
-        });
-  
-        const tText = await tRes.text();
-        if (tRes.ok) transcriptCache.set(String(transcriptId), JSON.parse(tText));
-        else console.error("transcript retrieve failed:", tRes.status, tText);
-      }
-    }
-  
-    res.sendStatus(200);
-  });
+  const evt = req.body;
+  const eventName = evt?.event;
 
-  app.get("/api/transcript_for_sdk_upload/:sdkUploadId", (req, res) => {
-    const sdkUploadId = String(req.params.sdkUploadId);
-    const recordingId = uploadToRecording.get(sdkUploadId);
-    if (!recordingId) return res.status(409).json({ status: "processing_upload" });
-  
-    const transcriptId = recordingToTranscript.get(recordingId);
-    if (!transcriptId) return res.status(409).json({ status: "creating_transcript" });
-  
-    const transcript = transcriptCache.get(transcriptId);
-    if (!transcript) return res.status(409).json({ status: "processing_transcript", transcript_id: transcriptId });
-  
-    return res.json({
-      status: "complete",
-      recording_id: recordingId,
-      transcript_id: transcriptId,
-      transcript_download_url: transcript?.data?.download_url ?? null,
+  const recordingId = evt?.data?.recording?.id ? String(evt.data.recording.id) : null;
+  const transcriptId = evt?.data?.transcript?.id ? String(evt.data.transcript.id) : null;
+
+  console.log("webhook:", eventName, { recordingId, transcriptId });
+
+  const isUploadDone =
+    eventName === "sdk_upload.complete" || eventName === "sdk_upload.completed";
+
+  if (isUploadDone && recordingId) {
+    completedRecordings.add(recordingId);
+
+    // Start async transcription exactly once per recording
+    if (!transcriptStateByRecordingId.has(recordingId)) {
+      transcriptStateByRecordingId.set(recordingId, { status: "starting" });
+
+      try {
+        const job = await createTranscript(recordingId);
+        const createdTranscriptId = job?.id ?? job?.transcript?.id ?? null;
+
+        transcriptStateByRecordingId.set(recordingId, {
+          status: "processing",
+          transcriptId: createdTranscriptId ? String(createdTranscriptId) : undefined,
+        });
+      } catch (e) {
+        transcriptStateByRecordingId.set(recordingId, {
+          status: "failed",
+          error: e?.message ?? String(e),
+        });
+        console.error("createTranscript failed:", e);
+      }
+    }
+  }
+
+  if (eventName === "transcript.done" && recordingId && transcriptId) {
+    try {
+      const tRes = await fetch(`${RECALL_API_BASE}/api/v1/transcript/${transcriptId}/`, {
+        headers: {
+          accept: "application/json",
+          Authorization: `Token ${RECALL_API_KEY}`,
+        },
+      });
+
+      const tText = await tRes.text();
+      if (!tRes.ok) {
+        console.error("transcript retrieve failed:", tRes.status, tText);
+      } else {
+        const transcript = JSON.parse(tText);
+        transcriptCache.set(transcriptId, transcript);
+
+        transcriptStateByRecordingId.set(recordingId, {
+          status: "complete",
+          transcriptId,
+        });
+      }
+    } catch (e) {
+      transcriptStateByRecordingId.set(recordingId, {
+        status: "failed",
+        transcriptId,
+        error: e?.message ?? String(e),
+      });
+      console.error("transcript retrieve failed:", e);
+    }
+  }
+
+  if (eventName === "transcript.failed" && recordingId) {
+    transcriptStateByRecordingId.set(recordingId, {
+      status: "failed",
+      transcriptId: transcriptId ?? undefined,
+      error: evt?.data?.data?.sub_code ?? "transcript.failed",
     });
+  }
+
+  res.sendStatus(200);
+});
+
+app.get("/api/transcript_for_recording/:recordingId", (req, res) => {
+  const recordingId = String(req.params.recordingId);
+  if (!recordingId) {
+    return res.status(400).json({ error: "Missing recordingId" });
+  }
+
+  // Step 1: wait for upload completion
+  if (!completedRecordings.has(recordingId)) {
+    return res.status(409).json({ status: "processing_upload" });
+  }
+
+  // Step 2: wait for transcript creation / processing
+  const state = transcriptStateByRecordingId.get(recordingId);
+  if (!state) {
+    return res.status(409).json({ status: "creating_transcript" });
+  }
+
+  if (state.status === "failed") {
+    return res.status(500).json({
+      status: "transcript_failed",
+      error: state.error ?? "unknown",
+      transcript_id: state.transcriptId ?? null,
+    });
+  }
+
+  if (state.status !== "complete") {
+    return res.status(409).json({
+      status: "processing_transcript",
+      transcript_id: state.transcriptId ?? null,
+    });
+  }
+
+  // Step 3: return the retrieved transcript artifact
+  const transcript = state.transcriptId ? transcriptCache.get(state.transcriptId) : null;
+  if (!transcript) {
+    return res.status(409).json({
+      status: "processing_transcript",
+      transcript_id: state.transcriptId ?? null,
+    });
+  }
+
+  return res.json({
+    status: "complete",
+    recording_id: recordingId,
+    transcript_id: state.transcriptId,
+    transcript_download_url: transcript?.data?.download_url ?? null,
   });
+});
 
 app.post("/api/create_sdk_recording", async (req, res) => {
     console.log("HIT /api/create_sdk_recording");  // <--- add this
@@ -170,31 +239,48 @@ app.get("/api/sdk_upload/:id", async (req, res) => {
     res.json(JSON.parse(text));
 });
 
-app.get("/api/recording/:sdkUploadId", async (req, res) => {
-    const sdkUploadId = String(req.params.sdkUploadId);
-  
-    // ✅ Gate: webhook must have arrived first
-    const recordingId = uploadToRecording.get(sdkUploadId);
-    if (!recordingId) {
-      return res.status(409).json({ status: "processing" }); // not ready yet
-    }
-  
-    // ✅ Now safe to retrieve the recording
+app.get("/api/recording/:recordingId", async (req, res) => {
+  const recordingId = String(req.params.recordingId);
+  if (!recordingId) {
+    return res.status(400).json({ error: "Missing recordingId" });
+  }
+
+  // Wait until sdk_upload.complete webhook has arrived for this recording
+  if (!completedRecordings.has(recordingId)) {
+    return res.status(409).json({ status: "processing_upload", recording_id: recordingId });
+  }
+
+  try {
     const recRes = await fetch(`${RECALL_API_BASE}/api/v1/recording/${recordingId}/`, {
-      headers: { accept: "application/json", Authorization: `Token ${RECALL_API_KEY}` },
+      headers: {
+        accept: "application/json",
+        Authorization: `Token ${RECALL_API_KEY}`,
+      },
     });
-  
+
     const recText = await recRes.text();
     if (!recRes.ok) return res.status(recRes.status).send(recText);
-  
+
     const recording = JSON.parse(recText);
+    const videoUrl =
+      recording?.media_shortcuts?.video_mixed?.data?.download_url ?? null;
+
+    if (!videoUrl) {
+      return res.status(409).json({
+        status: "processing_video",
+        recording_id: recordingId,
+      });
+    }
+
     return res.json({
       status: "complete",
       recording_id: recordingId,
-      video_download_url: recording?.media_shortcuts?.video_mixed?.data?.download_url ?? null,
-      recording,
+      video_download_url: videoUrl,
     });
-  });
+  } catch (e) {
+    return res.status(500).json({ error: e?.message ?? String(e) });
+  }
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
