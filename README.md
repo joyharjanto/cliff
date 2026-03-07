@@ -4,6 +4,8 @@ Cliff Notetaker is an invisible meeting assistant built on Recall’s Desktop SD
 
 Follow the steps below to get it running on your machine!
 
+[How to use the repo](https://www.loom.com/share/c7331e36d6334467b98b065b8a919cba)
+
 ---
 
 ## Features
