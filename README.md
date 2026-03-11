@@ -65,7 +65,9 @@ npm install
 
 ## 5. Start an ngrok Tunnel
 
-Recall requires a **public webhook endpoint**, so we expose the backend with ngrok.
+Recall requires a **public webhook endpoint**, so we expose the backend with ngrok. 
+
+In a new terminal, run:
 
 ```bash
 ngrok http 3000
