@@ -33,7 +33,16 @@ cd <repo-name>
 
 ---
 
-## 2. Create API Keys
+## 2. Download the Desktop recording SDK on your computer
+
+```bash
+npm install @recallai/desktop-sdk
+```
+
+---
+
+
+## 3. Create API Keys
 
 Create accounts and API keys from:
 
@@ -42,18 +51,19 @@ Create accounts and API keys from:
 
 ---
 
-## 3. Add Environment Variables
+## 4. Add Environment Variables
 
-Edit the `.env` file inside the **backend folder**.
+Copy the env.example file to a .env file inside of the backend folder and replace the following
 
 ```
 RECALL_API_KEY=your_recall_api_key
 OPENAI_API_KEY=your_openai_api_key
+RECALL_API_BASE=your_api_base_when_you_signup
 ```
 
 ---
 
-## 4. Install Dependencies
+## 5. Install Dependencies
 
 From the project root:
 
@@ -63,11 +73,17 @@ npm install
 
 ---
 
-## 5. Start an ngrok Tunnel
+## 6. Start an ngrok Tunnel
 
 Recall requires a **public webhook endpoint**, so we expose the backend with ngrok. 
 
-In a new terminal, run:
+First make sure you add the authtoken on ngrok:
+
+```bash
+ngrok config add-authtoken <token>
+```
+
+Open a new terminal in your root directory, run:
 
 ```bash
 ngrok http 3000
@@ -81,7 +97,7 @@ https://abc123.ngrok-free.app
 
 ---
 
-## 6. Configure Recall Webhooks
+## 7. Configure Recall Webhooks
 
 Go to your **Recall Dashboard** and configure the webhook URL.
 
@@ -99,7 +115,7 @@ https://abc123.ngrok-free.app/webhooks/recall
 
 Add events such as: 
 
-- `sdk_upload.complete`
+- `sdk_upload.completed`
 - `transcript.done`
 
 These events allow the backend to:
@@ -111,9 +127,9 @@ These events allow the backend to:
 
 ---
 
-## 7. Run the Backend Server
+## 8. Run the Backend Server
 
-Open a new terminal:
+Open a new terminal in your root directory:
 
 ```bash
 cd backend
@@ -128,7 +144,7 @@ http://localhost:3000
 
 ---
 
-## 8. Start the Electron App
+## 9. Start the Electron App
 
 Open another terminal from the **root directory**:
 
