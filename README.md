@@ -2,9 +2,9 @@
 
 Cliff Notetaker is an invisible meeting assistant built on Recall’s Desktop SDK, using Electron and Express, that listens to your meetings and summarizes key points. 
 
-Follow the steps below to get it running on your machine!
+Link to the docs for the [Desktop SDK](https://docs.recall.ai/docs/desktop-sdk)
 
-[How to use the repo](https://www.loom.com/share/c7331e36d6334467b98b065b8a919cba)
+Follow the steps below to get it running on your machine!
 
 ---
 
@@ -53,7 +53,7 @@ Create accounts and API keys from:
 
 ## 4. Add Environment Variables
 
-Copy the env.example file to a .env file inside of the backend folder and replace the following
+Rename the .env.example file inside of backend to .env and replace the following
 
 ```
 RECALL_API_KEY=your_recall_api_key
@@ -99,7 +99,7 @@ https://abc123.ngrok-free.app
 
 ## 7. Configure Recall Webhooks
 
-Go to your **Recall Dashboard** and configure the webhook URL.
+Login to Recall.ai, go to your **Recall Dashboard** and configure the [webhook URL.](https://docs.recall.ai/reference/webhooks-overview)
 
 Add the following endpoint:
 
