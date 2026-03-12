@@ -65,7 +65,7 @@ RECALL_API_BASE=your_api_base_when_you_signup
 
 ## 5. Install Dependencies
 
-From the project root:
+From the root directory:
 
 ```bash
 npm install
@@ -133,6 +133,14 @@ Open a new terminal in your root directory:
 
 ```bash
 cd backend
+```
+
+Install required dependencies in the backend directory
+``` bash
+npm install 
+```
+
+```
 node server.js
 ```
 
