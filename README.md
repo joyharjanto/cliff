@@ -95,6 +95,8 @@ You will receive a URL similar to:
 https://abc123.ngrok-free.app
 ```
 
+![ngrok tunnel](images/ngrok_tunnel.png)
+
 ---
 
 ## 7. Configure Recall Webhooks
@@ -113,10 +115,14 @@ Example:
 https://abc123.ngrok-free.app/webhooks/recall
 ```
 
+![webhook success](images/webhook_approval.png)
+
 Add events such as: 
 
 - `sdk_upload.completed`
 - `transcript.done`
+
+![webhook success](images/webhook_events.png)
 
 These events allow the backend to:
 
