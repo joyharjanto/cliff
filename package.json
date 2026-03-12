@@ -21,6 +21,7 @@
   "dependencies": {
     "@recallai/desktop-sdk": "^2.0.7",
     "electron-squirrel-startup": "^1.0.1",
+    "dotenv": "^17.3.1",
     "express": "^5.2.1"
   },
   "devDependencies": {
